@@ -58,7 +58,7 @@ class AiService {
                     return aiReply;
                 }
 
-                return 'AI вернул пустой ответ.';
+                return '';
             } catch (error) {
                 const status = error.response?.status;
                 const errorMsg = error.response?.data?.error?.message || error.message;
@@ -91,7 +91,7 @@ class AiService {
         }
 
         logger.error(`[AI] Не удалось получить ответ после ${maxRetries} попыток`);
-        return `❌ AI временно недоступен. Пост будет опубликован без переписывания.`;
+        return ``;
     }
 
     async rewritePost(post) {
