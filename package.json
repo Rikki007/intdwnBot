@@ -4,21 +4,36 @@
  "description": "Telegram bot for autoposting content from RSS and HTML sources",
  "main": "src/index.js",
  "scripts": {
- "start": "node src/index.js",
- "dev": "node --watch src/index.js"
+  "start": "node src/index.js",
+  "dev": "node --watch src/index.js",
+  "lint": "eslint src --ext .js",
+  "lint:fix": "eslint src --ext .js --fix",
+  "format": "prettier --write \"src/**/*.js\"",
+  "format:check": "prettier --check \"src/**/*.js\""
  },
- "keywords": ["telegram", "bot", "autopost", "rss"],
+ "keywords": [
+  "telegram",
+  "bot",
+  "autopost",
+  "rss"
+ ],
  "author": "",
  "license": "MIT",
  "dependencies": {
- "axios": "^1.6.2",
- "cheerio": "^1.0.0-rc.12",
- "dotenv": "^16.3.1",
- "node-cron": "^3.0.3",
- "rss-parser": "^3.13.0",
- "sqlite3": "^5.1.6",
- "telegraf": "^4.15.3",
- "uuid": "^9.0.1",
- "winston": "^3.11.0"
+  "axios": "^1.6.2",
+  "cheerio": "^1.0.0-rc.12",
+  "dotenv": "^16.3.1",
+  "node-cron": "^3.0.3",
+  "rss-parser": "^3.13.0",
+  "sqlite3": "^5.1.6",
+  "telegraf": "^4.15.3",
+  "uuid": "^9.0.1",
+  "winston": "^3.11.0"
+ },
+ "devDependencies": {
+  "eslint": "^10.2.0",
+  "eslint-config-prettier": "^10.1.8",
+  "eslint-plugin-prettier": "^5.5.5",
+  "prettier": "^3.8.1"
  }
 }

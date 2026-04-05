@@ -1,92 +1,89 @@
 const postDao = require('../db/postDao');
 const logger = require('../utils/logger');
+const config = require('../config');
+const aiService = require('../services/aiService');
 
 /**
  * Post Service - business logic for posts
  */
 const postService = {
- /**
- * Create post from parsed content
- */
- async createPost(sourceId, data) {
-  // Проверяем дубликаты
-  const isDuplicate = await postDao.isDuplicate(data.url || data.link, data.content);
+    /**
+     * Create post from parsed content
+     */
+    async createPost(sourceId, data) {
+        const post = await postDao.create({
+            source_id: sourceId,
+            title: data.title,
+            content: data.content || data.description,
+            url: data.url || data.link,
+            image_url: data.imageUrl || data.image_url,
+        });
 
-  if (isDuplicate) {
-    logger.info(`Duplicate post skipped: ${data.url || data.link}`);
-    return null;
-  }
+        if (!post) return null;
 
-  const post = await postDao.create({
-    source_id: sourceId,
-    title: data.title,
-    content: data.content || data.description,        
-    url: data.url || data.link,                       
-    image_url: data.imageUrl || data.image_url,
-  });
+        if (config.ai?.enabled) {
+            logger.info(`[Мозг] === НАЧИНАЮ ПЕРЕПИСЫВАНИЕ === "${post.title?.slice(0, 80)}..."`);
+            return await aiService.rewritePost(post);
+        }
 
-  return post;
-},
+        return post;
+    },
+    /**
+     * Get all posts
+     */
+    async getPosts(limit = 50) {
+        return await postDao.getAll(limit);
+    },
 
- /**
- * Get all posts
- */
- async getPosts(limit =50) {
- return await postDao.getAll(limit);
- },
+    /**
+     * Get posts by source
+     */
+    async getPostsBySource(sourceId, limit = 20) {
+        return await postDao.getBySource(sourceId, limit);
+    },
 
- /**
- * Get posts by source
- */
- async getPostsBySource(sourceId, limit =20) {
- return await postDao.getBySource(sourceId, limit);
- },
+    /**
+     * Get post count
+     */
+    async getPostCount() {
+        return await postDao.getCount();
+    },
 
- /**
- * Get post count
- */
- async getPostCount() {
- return await postDao.getCount();
- },
+    /**
+     * Delete post
+     */
+    async deletePost(id) {
+        return await postDao.delete(id);
+    },
 
- /**
- * Delete post
- */
- async deletePost(id) {
- return await postDao.delete(id);
- },
+    /**
+     * Format post for Telegram
+     */
+    formatForTelegram(post) {
+        let text = '';
 
-/**
- * Format post for Telegram (безопасная версия)
- */
-formatForTelegram(post) {
-  let text = '';
+        if (post.title) {
+            const safeTitle = post.title.replace(/([_*[\]()~`>#+\-=|{}.!])/g, '\\$1');
 
-  if (post.title) {
-    // Экранируем специальные символы в заголовке
-    const safeTitle = post.title
-      .replace(/([_*[\]()~`>#+\-=|{}.!])/g, '\\$1'); // экранируем Markdown v2 символы
+            text += `*${safeTitle}*\n\n`;
+        }
 
-    text += `*${safeTitle}*\n\n`;
-  }
+        if (post.content) {
+            let content = post.content.slice(0, 3900);
 
-  if (post.content) {
-    // Ограничиваем длину и тоже экранируем
-    let content = post.content.slice(0, 3500);
+            content = content
+                .replace(/([_*[\]()~`>#|])/g, '\\$1')
+                .replace(/\\{2,}/g, '\\');
 
-    // Убираем опасные символы или экранируем
-    content = content.replace(/([_*[\]()~`>#+\-=|{}.!])/g, '\\$1');
+            text += content + '\n\n';
+        }
 
-    text += content + '\n\n';
-  }
+        if (post.url) {
+            text += `🔗 [Читать оригинал](${post.url})`;
+        }
 
-  if (post.url) {
-    // Безопасная ссылка
-    text += `🔗 [Читать оригинал](${post.url})`;
-  }
-
-  return text;
-},
+        return text;
+    },
 };
 
 module.exports = postService;
