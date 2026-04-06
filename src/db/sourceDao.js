@@ -1,175 +1,153 @@
-const { getDb } = require('../db');
+const { getDb } = require('./index');
 const { generateId } = require('../utils/helpers');
 const logger = require('../utils/logger');
 
 /**
- * Source Data Access Object
+ * Source Data Access Object (адаптировано под better-sqlite3)
  */
 const sourceDao = {
     /**
      * Create new source
      */
-    create(type, url, name = null, selector = null) {
-        return new Promise((resolve, reject) => {
-            const db = getDb();
-            const id = generateId();
+    async create(type, url, name = null, selector = null) {
+        const db = getDb();
+        const id = generateId();
 
-            const stmt = db.prepare(`
- INSERT INTO sources (id, type, url, name, selector, is_active)
- VALUES (?, ?, ?, ?, ?,1)
- `);
+        const stmt = db.prepare(`
+            INSERT INTO sources (id, type, url, name, selector, is_active)
+            VALUES (?, ?, ?, ?, ?, 1)
+        `);
 
-            stmt.run(id, type, url, name, selector, (err) => {
-                if (err) {
-                    logger.error('Error creating source:', err);
-                    reject(err);
-                } else {
-                    logger.info(`Source created: ${url}`);
-                    resolve({ id, type, url, name, selector, is_active: 1 });
-                }
-            });
-            stmt.finalize();
-        });
+        try {
+            stmt.run(id, type, url, name, selector);
+
+            logger.info(`Source created: ${url}`);
+            return { id, type, url, name, selector, is_active: 1 };
+        } catch (err) {
+            logger.error('Error creating source:', err);
+            throw err;
+        }
     },
 
     /**
      * Get all sources
      */
-    getAll() {
-        return new Promise((resolve, reject) => {
-            const db = getDb();
-            db.all('SELECT * FROM sources ORDER BY created_at DESC', (err, rows) => {
-                if (err) {
-                    logger.error('Error getting sources:', err);
-                    reject(err);
-                } else {
-                    resolve(rows);
-                }
-            });
-        });
+    async getAll() {
+        const db = getDb();
+        const stmt = db.prepare('SELECT * FROM sources ORDER BY created_at DESC');
+        try {
+            return stmt.all();
+        } catch (err) {
+            logger.error('Error getting sources:', err);
+            throw err;
+        }
     },
 
     /**
      * Get active sources
      */
-    getActive() {
-        return new Promise((resolve, reject) => {
-            const db = getDb();
-            db.all('SELECT * FROM sources WHERE is_active =1', (err, rows) => {
-                if (err) {
-                    logger.error('Error getting active sources:', err);
-                    reject(err);
-                } else {
-                    resolve(rows);
-                }
-            });
-        });
+    async getActive() {
+        const db = getDb();
+        const stmt = db.prepare('SELECT * FROM sources WHERE is_active = 1');
+        try {
+            return stmt.all();
+        } catch (err) {
+            logger.error('Error getting active sources:', err);
+            throw err;
+        }
     },
 
     /**
      * Get source by ID
      */
-    getById(id) {
-        return new Promise((resolve, reject) => {
-            const db = getDb();
-            db.get('SELECT * FROM sources WHERE id = ?', [id], (err, row) => {
-                if (err) {
-                    logger.error('Error getting source:', err);
-                    reject(err);
-                } else {
-                    resolve(row);
-                }
-            });
-        });
+    async getById(id) {
+        const db = getDb();
+        const stmt = db.prepare('SELECT * FROM sources WHERE id = ?');
+        try {
+            return stmt.get(id);
+        } catch (err) {
+            logger.error('Error getting source:', err);
+            throw err;
+        }
     },
 
     /**
      * Update source
      */
-    update(id, data) {
-        return new Promise((resolve, reject) => {
-            const db = getDb();
-            const fields = [];
-            const values = [];
+    async update(id, data) {
+        const db = getDb();
 
-            if (data.name !== undefined) {
-                fields.push('name = ?');
-                values.push(data.name);
-            }
-            if (data.url !== undefined) {
-                fields.push('url = ?');
-                values.push(data.url);
-            }
-            if (data.selector !== undefined) {
-                fields.push('selector = ?');
-                values.push(data.selector);
-            }
-            if (data.is_active !== undefined) {
-                fields.push('is_active = ?');
-                values.push(data.is_active);
-            }
+        const fields = [];
+        const values = [];
 
-            fields.push('updated_at = CURRENT_TIMESTAMP');
-            values.push(id);
+        if (data.name !== undefined) {
+            fields.push('name = ?');
+            values.push(data.name);
+        }
+        if (data.url !== undefined) {
+            fields.push('url = ?');
+            values.push(data.url);
+        }
+        if (data.selector !== undefined) {
+            fields.push('selector = ?');
+            values.push(data.selector);
+        }
+        if (data.is_active !== undefined) {
+            fields.push('is_active = ?');
+            values.push(data.is_active);
+        }
 
-            const sql = `UPDATE sources SET ${fields.join(', ')} WHERE id = ?`;
-            const stmt = db.prepare(sql);
+        fields.push('updated_at = CURRENT_TIMESTAMP');
+        values.push(id);
 
-            stmt.run(...values, (err) => {
-                if (err) {
-                    logger.error('Error updating source:', err);
-                    reject(err);
-                } else {
-                    logger.info(`Source updated: ${id}`);
-                    resolve({ id, ...data });
-                }
-            });
-            stmt.finalize();
-        });
+        const sql = `UPDATE sources SET ${fields.join(', ')} WHERE id = ?`;
+
+        const stmt = db.prepare(sql);
+
+        try {
+            stmt.run(...values);
+            logger.info(`Source updated: ${id}`);
+            return { id, ...data };
+        } catch (err) {
+            logger.error('Error updating source:', err);
+            throw err;
+        }
     },
 
     /**
      * Delete source
      */
-    delete(id) {
-        return new Promise((resolve, reject) => {
-            const db = getDb();
-            db.run('DELETE FROM sources WHERE id = ?', [id], (err) => {
-                if (err) {
-                    logger.error('Error deleting source:', err);
-                    reject(err);
-                } else {
-                    logger.info(`Source deleted: ${id}`);
-                    resolve({ success: true });
-                }
-            });
-        });
+    async delete(id) {
+        const db = getDb();
+        const stmt = db.prepare('DELETE FROM sources WHERE id = ?');
+        try {
+            stmt.run(id);
+            logger.info(`Source deleted: ${id}`);
+            return { success: true };
+        } catch (err) {
+            logger.error('Error deleting source:', err);
+            throw err;
+        }
     },
 
     /**
      * Toggle source active status
      */
-    toggleActive(id) {
-        return new Promise((resolve, reject) => {
-            const db = getDb();
-            db.run(
-                `
- UPDATE sources 
- SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END,
- updated_at = CURRENT_TIMESTAMP
- WHERE id = ?
- `,
-                [id],
-                (err) => {
-                    if (err) {
-                        logger.error('Error toggling source:', err);
-                        reject(err);
-                    } else {
-                        resolve({ success: true });
-                    }
-                }
-            );
-        });
+    async toggleActive(id) {
+        const db = getDb();
+        const stmt = db.prepare(`
+            UPDATE sources 
+            SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `);
+        try {
+            stmt.run(id);
+            return { success: true };
+        } catch (err) {
+            logger.error('Error toggling source:', err);
+            throw err;
+        }
     },
 };
 

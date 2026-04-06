@@ -1,87 +1,74 @@
-const { getDb } = require('../db');
+const { getDb } = require('./index');
 const logger = require('../utils/logger');
 
 /**
- * Log Data Access Object
+ * Log Data Access Object (адаптировано под better-sqlite3)
  */
 const logDao = {
     /**
      * Add log entry
      */
     log(level, message, context = null) {
-        return new Promise((resolve, reject) => {
-            const db = getDb();
-            const stmt = db.prepare(`
- INSERT INTO logs (level, message, context)
- VALUES (?, ?, ?)
- `);
+        const db = getDb();
+        const stmt = db.prepare(`
+            INSERT INTO logs (level, message, context)
+            VALUES (?, ?, ?)
+        `);
 
-            stmt.run(level, message, context ? JSON.stringify(context) : null, (err) => {
-                if (err) {
-                    logger.error('Error writing log:', err);
-                    reject(err);
-                } else {
-                    resolve({ success: true });
-                }
-            });
-            stmt.finalize();
-        });
+        try {
+            stmt.run(level, message, context ? JSON.stringify(context) : null);
+            return { success: true };
+        } catch (err) {
+            // Логируем через winston, чтобы не зациклиться
+            logger.error('Error writing log to database:', err);
+            // Не бросаем ошибку, чтобы не ломать основной поток логирования
+        }
     },
 
     /**
      * Get recent logs
      */
-    getRecent(limit = 100) {
-        return new Promise((resolve, reject) => {
-            const db = getDb();
-            db.all('SELECT * FROM logs ORDER BY created_at DESC LIMIT ?', [limit], (err, rows) => {
-                if (err) {
-                    logger.error('Error getting logs:', err);
-                    reject(err);
-                } else {
-                    resolve(rows);
-                }
-            });
-        });
+    async getRecent(limit = 100) {
+        const db = getDb();
+        const stmt = db.prepare('SELECT * FROM logs ORDER BY created_at DESC LIMIT ?');
+        try {
+            return stmt.all(limit);
+        } catch (err) {
+            logger.error('Error getting logs:', err);
+            throw err;
+        }
     },
 
     /**
      * Get logs by level
      */
-    getByLevel(level, limit = 100) {
-        return new Promise((resolve, reject) => {
-            const db = getDb();
-            db.all(
-                'SELECT * FROM logs WHERE level = ? ORDER BY created_at DESC LIMIT ?',
-                [level, limit],
-                (err, rows) => {
-                    if (err) {
-                        logger.error('Error getting logs by level:', err);
-                        reject(err);
-                    } else {
-                        resolve(rows);
-                    }
-                }
-            );
-        });
+    async getByLevel(level, limit = 100) {
+        const db = getDb();
+        const stmt = db.prepare(
+            'SELECT * FROM logs WHERE level = ? ORDER BY created_at DESC LIMIT ?'
+        );
+        try {
+            return stmt.all(level, limit);
+        } catch (err) {
+            logger.error('Error getting logs by level:', err);
+            throw err;
+        }
     },
 
     /**
-     * Clear old logs (older than days)
+     * Clear old logs
      */
-    clearOld(days = 30) {
-        return new Promise((resolve, reject) => {
-            const db = getDb();
-            db.run(`DELETE FROM logs WHERE created_at< datetime('now', '-${days} days')`, (err) => {
-                if (err) {
-                    logger.error('Error clearing old logs:', err);
-                    reject(err);
-                } else {
-                    logger.info('Old logs cleared');
-                    resolve({ success: true });
-                }
-            });
-        });
+    async clearOld(days = 30) {
+        const db = getDb();
+        const stmt = db.prepare(`DELETE FROM logs WHERE created_at < datetime('now', '-${days} days')`);
+        try {
+            stmt.run();
+            logger.info(`Old logs cleared (older than ${days} days)`);
+            return { success: true };
+        } catch (err) {
+            logger.error('Error clearing old logs:', err);
+            throw err;
+        }
     },
 };
 

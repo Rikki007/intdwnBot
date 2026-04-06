@@ -57,33 +57,32 @@ const postService = {
     },
 
     /**
-     * Format post for Telegram
-     */
-    formatForTelegram(post) {
-        let text = '';
+ * Format post for Telegram
+ */
+formatForTelegram(post) {
+    let text = '';
 
-        if (post.title) {
-            const safeTitle = post.title.replace(/([_*[\]()~`>#+\-=|{}.!])/g, '\\$1');
+    if (post.title) {
+        const safeTitle = markdownV2Escape(post.title);
+        text += `*${safeTitle}*\n\n`;
+    }
 
-            text += `*${safeTitle}*\n\n`;
-        }
+    if (post.content) {
+        let content = post.content.slice(0, 3900);
 
-        if (post.content) {
-            let content = post.content.slice(0, 3900);
+        content = markdownV2Escape(content)
+            .replace(/\\{2,}/g, '\\');   // убираем двойные слеши, если появятся
 
-            content = content
-                .replace(/([_*[\]()~`>#|])/g, '\\$1')
-                .replace(/\\{2,}/g, '\\');
+        text += content + '\n\n';
+    }
 
-            text += content + '\n\n';
-        }
+    if (post.url) {
+        const safeUrl = markdownV2Escape(post.url);           // ← вот это было пропущено!
+        text += `🔗 [Читать оригинал](${safeUrl})`;
+    }
 
-        if (post.url) {
-            text += `🔗 [Читать оригинал](${post.url})`;
-        }
-
-        return text;
-    },
+    return text;
+},
 };
 
 module.exports = postService;

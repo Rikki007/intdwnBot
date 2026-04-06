@@ -5,7 +5,7 @@
 
 const config = require('./config');
 const logger = require('./utils/logger');
-const { initDatabase, closeDatabase } = require('./db');
+const { initDatabase, closeDatabase } = require('./db/index');
 const botService = require('./bot/botService');
 const setupBotHandlers = require('./bot/handlers');
 const queueService = require('./services/queueService');
