@@ -60,7 +60,9 @@ const logDao = {
      */
     async clearOld(days = 30) {
         const db = getDb();
-        const stmt = db.prepare(`DELETE FROM logs WHERE created_at < datetime('now', '-${days} days')`);
+        const stmt = db.prepare(
+            `DELETE FROM logs WHERE created_at < datetime('now', '-${days} days')`
+        );
         try {
             stmt.run();
             logger.info(`Old logs cleared (older than ${days} days)`);

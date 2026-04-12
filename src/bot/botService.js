@@ -1,7 +1,7 @@
-const { Telegraf, Markup } = require('telegraf');
+const { Telegraf } = require('telegraf');
 const config = require('../config');
 const logger = require('../utils/logger');
-const { markdownV2Escape } = require('../utils/markdown');
+const htmlEscape = require('../utils/htmlEscape');
 
 /**
  * Telegram Bot Service
@@ -30,81 +30,130 @@ class BotService {
     setupCommands() {
         // /start command
         this.bot.command('start', async (ctx) => {
-            const welcome = `👋 *Добро пожаловать в Autopost Bot!*
+            const welcome = `
+👋 <b>Добро пожаловать в Autopost Bot!</b>
 
-Я помогу автоматически публиковать контент из RSS и HTML источников.
+Я автоматически публикую контент из RSS и HTML источников в ваш канал.
 
-📋 *Команды:*
-/add_source — добавить источник
-/list_sources — список источников
-/poll — создать опрос
-/status — статистика бота
-/help — помощь`;
+📋 <b>Доступные команды:</b>
 
-            const safeText = markdownV2Escape(welcome);
+<code>/add_source</code> — добавить новый источник
+<code>/list_sources</code> — список всех источников
+<code>/poll</code> — создать опрос в канале
+<code>/status</code> — статистика бота
+<code>/parse</code> — запустить парсинг вручную
+<code>/toggle_source</code> — включить/выключить источник
+<code>/remove_source</code> — удалить источник
+<code>/clear_all_sources</code> — полная очистка всех данных
+<code>/chatid</code> — показать ID текущего чата
+<code>/help</code> — показать эту справку
 
-            await ctx.reply(safeText, { parse_mode: 'MarkdownV2' });
+Для начала работы добавьте источник командой <code>/add_source</code>
+            `.trim();
+
+            await ctx.reply(welcome, { parse_mode: 'HTML' });
         });
 
         // /help command
         this.bot.command('help', async (ctx) => {
-            const help = `📖 *Справка*
+            const help = `
+📖 <b>Справка по командам Autopost Bot</b>
 
-/add_source - добавление RSS или HTML источника
-/list_sources - просмотр всех источников
-/poll - создать опрос
-/status - статистика бота
-/parse - ручной парсинг
-/toggle_source - приостановка/запуск постинга
+<b>Управление источниками:</b>
+<code>/add_source &lt;type&gt; &lt;url&gt; [name] [selector]</code>
+<code>/list_sources</code> — список источников
+<code>/toggle_source &lt;id&gt;</code> — включить/выключить
+<code>/remove_source &lt;id&gt;</code> — удалить источник
+<code>/clear_all_sources</code> — очистить всё
 
-*Примеры добавления:*
+<b>Публикация:</b>
+<code>/poll "Вопрос?" Вариант1 Вариант2 ...</code>
+<code>/parse</code> — запустить парсинг вручную
 
-/add_source rss https://example.com/feed.xml Название
+<b>Информация:</b>
+<code>/status</code> — статистика
+<code>/chatid</code> — ID чата
 
-/add_source html https://example.com/blog Blog article`;
+<b>Примеры:</b>
 
-            const safeText = markdownV2Escape(help);
+<code>/add_source rss https://example.com/feed.xml "Название"</code>
 
-            await ctx.reply(safeText, { parse_mode: 'MarkdownV2' });
+<code>/add_source html https://example.com/news "Название"</code>
+
+<code>/poll "Как вам бот?" Отлично Хорошо Нормально</code>
+            `.trim();
+
+            await ctx.reply(help, { parse_mode: 'HTML' });
         });
     }
 
     /**
-     * Send message to channel
+     * Send message to channel (HTML)
      */
     async sendToChannel(text, options = {}) {
         try {
-            const safeText = markdownV2Escape(text);
+            if (!text) {
+                throw new Error('Cannot send empty message');
+            }
 
-            const message = await this.bot.telegram.sendMessage(this.channelId, safeText, {
-                parse_mode: options.parseMode || 'MarkdownV2',
+            logger.info(`[Send] Пытаюсь отправить сообщение длиной ${text.length} символов`);
+
+            const message = await this.bot.telegram.sendMessage(this.channelId, text, {
+                parse_mode: options.parseMode || 'HTML',
                 reply_markup: options.replyMarkup,
-                disable_web_page_preview: options.disablePreview || false,
+                disable_web_page_preview: options.disablePreview ?? false, // используем nullish coalescing
+                link_preview_options: options.linkPreviewOptions || undefined, // на будущее
             });
-            logger.info(`Message sent to channel: ${message.message_id}`);
+
+            logger.info(`✅ Сообщение успешно отправлено в канал: ${message.message_id}`);
+            // Логируем первые 500 символов для отладки (не весь текст)
+            logger.debug('Отправленный текст (начало):', text.substring(0, 500) + (text.length > 500 ? '...' : ''));
+
             return message;
         } catch (error) {
-            logger.error('Error sending to channel:', error.message);
+            logger.error('❌ Ошибка при отправке сообщения в канал:');
+            logger.error(`   Текст ошибки: ${error.message}`);
+            logger.error(`   Код ошибки: ${error.code || error.response?.error_code}`);
+            logger.error(`   Описание: ${error.description || error.response?.description}`);
+            
+            // Логируем проблемный текст (без повторного экранирования)
+            logger.error(`   Проблемный текст (начало): ${text.substring(0, 400)}...`);
+
+            if (error.stack) {
+                logger.error('   Stack:', error.stack);
+            }
+
             throw error;
         }
     }
 
     /**
-     * Send photo to channel
+     * Send photo to channel with caption (HTML)
      */
     async sendPhotoToChannel(photoUrl, caption = '', options = {}) {
         try {
-            const safeCaption = markdownV2Escape(caption);
+            if (!photoUrl) {
+                throw new Error('Photo URL is required');
+            }
 
             const message = await this.bot.telegram.sendPhoto(this.channelId, photoUrl, {
-                caption: safeCaption,
-                parse_mode: options.parseMode || 'MarkdownV2', // ← поменяли дефолт
+                caption: caption || undefined,           // если caption пустой — не отправляем
+                parse_mode: options.parseMode || 'HTML',
                 reply_markup: options.replyMarkup,
+                disable_notification: options.disableNotification ?? false,
             });
-            logger.info(`Photo sent to channel: ${message.message_id}`);
+
+            logger.info(`📸 Фото успешно отправлено в канал: ${message.message_id}`);
             return message;
         } catch (error) {
-            logger.error('Error sending photo to channel:', error.message);
+            logger.error('❌ Ошибка при отправке фото в канал:', error.message);
+            
+            // Более детальное логирование для фото
+            logger.error(`   Photo URL: ${photoUrl}`);
+            if (caption) {
+                logger.error(`   Caption (начало): ${caption.substring(0, 300)}...`);
+            }
+
             throw error;
         }
     }

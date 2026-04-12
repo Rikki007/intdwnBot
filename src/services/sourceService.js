@@ -82,7 +82,7 @@ ID: \`${source.id}\``;
     // clear all sources
     async clearAllSources() {
         try {
-            const db = require('../db/index').getDb();   // ← используем getDb()
+            const db = require('../db/index').getDb(); // ← используем getDb()
 
             // Сначала удаляем посты
             const deletePosts = db.prepare('DELETE FROM posts');
@@ -95,7 +95,7 @@ ID: \`${source.id}\``;
             logger.info(`All sources cleared. Removed ${result.changes} sources.`);
             return {
                 success: true,
-                message: `✅ Удалено источников: ${result.changes}`
+                message: `✅ Удалено источников: ${result.changes}`,
             };
         } catch (error) {
             logger.error('Error clearing all sources:', error);

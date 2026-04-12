@@ -33,6 +33,6 @@ module.exports = {
         enabled: process.env.AI_ENABLED === 'true',
         provider: process.env.AI_PROVIDER || 'openrouter',
         apiKey: process.env.AI_API_KEY,
-        model: process.env.AI_MODEL || 'qwen/qwen3.6-plus:free',
+        model: process.env.AI_MODEL || 'z-ai/glm-4.5-air:free',
     },
 };

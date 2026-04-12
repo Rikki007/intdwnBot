@@ -1,14 +1,16 @@
+// src/services/postService.js
 const postDao = require('../db/postDao');
 const logger = require('../utils/logger');
 const config = require('../config');
-const aiService = require('../services/aiService');
+const aiService = require('./aiService');
+const htmlEscape = require('../utils/htmlEscape');
 
 /**
- * Post Service - business logic for posts
+ * Post Service - бизнес-логика постов
  */
 const postService = {
     /**
-     * Create post from parsed content
+     * Создание поста (с возможной AI-обработкой)
      */
     async createPost(sourceId, data) {
         const post = await postDao.create({
@@ -22,67 +24,70 @@ const postService = {
         if (!post) return null;
 
         if (config.ai?.enabled) {
-            logger.info(`[Мозг] === НАЧИНАЮ ПЕРЕПИСЫВАНИЕ === "${post.title?.slice(0, 80)}..."`);
+            logger.info(`[AI] Переписываю пост: "${post.title?.slice(0, 80)}..."`);
             return await aiService.rewritePost(post);
         }
 
         return post;
     },
+
+    formatForTelegram(post) {
+        let html = '';
+
+        if (post.title) {
+            const safeTitle = htmlEscape(post.title);
+            html += `📰 <b>${safeTitle}</b>\n\n`;
+        }
+
+        if (post.content) {
+            let content = post.content.trim();
+
+            if (content.length > 3900) {
+                content = content.slice(0, 3900) + '…';
+            }
+
+            const safeContent = htmlEscape(content)
+                .replace(/\n\n+/g, '\n<br><br>')
+                .replace(/\n/g, '<br>');
+
+            html += safeContent + '\n\n';
+        }
+
+        if (post.url) {
+            const safeUrl = htmlEscape(post.url);
+            html += `<a href="${safeUrl}">🔗 Читать оригинал</a>`;
+        }
+
+        return html.trim();
+    },
+
     /**
-     * Get all posts
+     * Получить все посты
      */
     async getPosts(limit = 50) {
         return await postDao.getAll(limit);
     },
 
     /**
-     * Get posts by source
+     * Посты по источнику
      */
     async getPostsBySource(sourceId, limit = 20) {
         return await postDao.getBySource(sourceId, limit);
     },
 
     /**
-     * Get post count
+     * Количество постов
      */
     async getPostCount() {
         return await postDao.getCount();
     },
 
     /**
-     * Delete post
+     * Удаление поста
      */
     async deletePost(id) {
         return await postDao.delete(id);
     },
-
-    /**
- * Format post for Telegram
- */
-formatForTelegram(post) {
-    let text = '';
-
-    if (post.title) {
-        const safeTitle = markdownV2Escape(post.title);
-        text += `*${safeTitle}*\n\n`;
-    }
-
-    if (post.content) {
-        let content = post.content.slice(0, 3900);
-
-        content = markdownV2Escape(content)
-            .replace(/\\{2,}/g, '\\');   // убираем двойные слеши, если появятся
-
-        text += content + '\n\n';
-    }
-
-    if (post.url) {
-        const safeUrl = markdownV2Escape(post.url);           // ← вот это было пропущено!
-        text += `🔗 [Читать оригинал](${safeUrl})`;
-    }
-
-    return text;
-},
 };
 
 module.exports = postService;

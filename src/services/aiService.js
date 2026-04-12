@@ -4,14 +4,14 @@ const logger = require('../utils/logger');
 const config = require('../config');
 
 /**
- * Universal AI service via OpenRouter 
+ * Universal AI service via OpenRouter
  */
 class AiService {
     constructor() {
         this.enabled = config.ai?.enabled === true;
         this.provider = config.ai?.provider || 'openrouter';
         this.apiKey = config.ai?.apiKey;
-        this.model = config.ai?.model || 'qwen/qwen3.6-plus:free';
+        this.model = config.ai?.model || 'z-ai/glm-4.5-air:free';
 
         if (this.enabled && !this.apiKey) {
             logger.warn('AI_API_KEY не указан в .env — AI отключён');
@@ -91,7 +91,7 @@ class AiService {
         }
 
         logger.error(`[AI] Не удалось получить ответ после ${maxRetries} попыток`);
-        return ``;
+        return '';
     }
 
     async rewritePost(post) {
@@ -108,7 +108,7 @@ class AiService {
 - Переведи заголовок на естественный, кликабельный русский.
 - Сделай полный перевод всей статьи, сохраняя научную точность.
 - Стиль: живой, увлекательный, научно-популярный.
-- Длина: длина текста должна составлять ~750–850 символов).
+- Длина: длина текста должна составлять ~600–650 символов).
 
 Ответ верни **строго** в формате:
 

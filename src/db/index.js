@@ -50,7 +50,7 @@ function initDatabase() {
             image_url TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             published_at TEXT,
-            FOREIGN KEY (source_id) REFERENCES sources(id)
+            FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE
         )
     `);
 

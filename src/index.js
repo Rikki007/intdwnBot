@@ -11,8 +11,6 @@ const setupBotHandlers = require('./bot/handlers');
 const queueService = require('./services/queueService');
 const postService = require('./services/postService');
 const schedulerService = require('./scheduler');
-const aiService = require('./services/aiService');
-const { Markup } = require('telegraf');
 
 /**
  * Setup queue handlers
@@ -24,9 +22,8 @@ function setupQueue() {
         try {
             const post = await Promise.race([
                 postService.createPost(sourceId, data),
-                new Promise(
-                    (_, reject) =>
-                        setTimeout(() => reject(new Error('AI processing timeout')), 240000)
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('AI processing timeout')), 240000)
                 ),
             ]);
 
@@ -48,7 +45,7 @@ function setupQueue() {
             );
         } catch (error) {
             if (error.message.includes('timeout')) {
-                logger.warn(`[Timeout] AI обработка поста превысила лимит времени. Пропускаем.`);
+                logger.warn('[Timeout] AI обработка поста превысила лимит времени. Пропускаем.');
             } else {
                 logger.error('Error publishing post:', error.message);
             }

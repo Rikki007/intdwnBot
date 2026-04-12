@@ -1,277 +1,376 @@
-const { Markup } = require('telegraf');
 const sourceService = require('../services/sourceService');
 const postService = require('../services/postService');
 const botService = require('../bot/botService');
 const logger = require('../utils/logger');
-const { markdownV2Escape } = require('../utils/markdown');
+const htmlEscape = require('../utils/htmlEscape');
 
 /**
  * Setup additional bot commands and handlers
  */
 function setupBotHandlers(bot) {
-    // State for conversation handling
-    const userStates = new Map();
-
+        // /add_source command
     // /add_source command
-    bot.command('add_source', async (ctx) => {
-        const args = ctx.message.text.split(' ').slice(1);
+bot.command('add_source', async (ctx) => {
+    const args = ctx.message.text.split(' ').slice(1);
 
-        if (args.length < 2) {
-            const usage =
-                `📝 *Использование:*\n` +
-                `\`/add_source <type> <url> [name] [selector]\`\n\n` +
-                `*Примеры:*\n` +
-                `/add_source rss https://example.com/feed.xml Мой RSS\n` +
-                `/add_source html https://example.com/blog Blog article`;
+    if (args.length < 2) {
+        const usage = `
+📝 <b>Использование:</b>
 
-            await ctx.reply(markdownV2Escape(usage), {
-                parse_mode: 'MarkdownV2',
-            });
-            return;
-        }
+<code>/add_source &lt;type&gt; &lt;url&gt; [name]</code>
 
-        const [type, url, name, selector] = args;
+<b>Примеры:</b>
 
-        try {
-            const source = await sourceService.addSource(type, url, name, selector);
-            const successText = `✅ *Источник добавлен!*\n\nТип: ${type}\nURL: ${url}`;
+<code>/add_source rss https://example.com/feed.xml Мой RSS</code>
 
-            await ctx.reply(markdownV2Escape(successText), {
-                parse_mode: 'MarkdownV2',
-            });
-        } catch (error) {
-            await ctx.reply(`❌ Ошибка: ${error.message}`);
-        }
-    });
+<code>/add_source html https://example.com/blog "Blog article"</code>
+
+<b>Подсказка:</b>
+• <code>type</code> — rss или html
+• Если в названии или селекторе есть пробелы — бери в кавычки
+        `.trim();
+
+        await ctx.reply(usage, { parse_mode: 'HTML' });
+        return;
+    }
+
+    const [type, url, name, selector] = args;
+
+    try {
+        await sourceService.addSource(type, url, name, selector);
+
+        const successText = `
+✅ <b>Источник успешно добавлен!</b>
+
+Имя: ${htmlEscape(name || '—')}
+Тип: ${htmlEscape(type.toUpperCase())}
+URL: ${htmlEscape(url)}
+        `.trim();
+
+        await ctx.reply(successText, { parse_mode: 'HTML' });
+    } catch (error) {
+        await ctx.reply(
+            `❌ <b>Ошибка:</b> ${htmlEscape(error.message)}`, 
+            { parse_mode: 'HTML' }
+        );
+    }
+});
 
     // /poll command
-    bot.command('poll', async (ctx) => {
-        const fullText = ctx.message.text.trim();
-        let textAfterCommand = fullText.replace(/^\/poll\s+/, '').trim();
+bot.command('poll', async (ctx) => {
+    const fullText = ctx.message.text.trim();
+    let textAfterCommand = fullText.replace(/^\/poll\s+/, '').trim();
 
-        if (!textAfterCommand) {
-            const usage =
-                `📝 *Использование:*\n` +
-                `\`/poll "Вопрос с пробелами?" Вариант1 Вариант2 Вариант3\`\n\n` +
-                `*Пример:*\n` +
-                `/poll "Как вам сегодня погода?" Отлично Нормально Плохо Ужасно`;
+    if (!textAfterCommand) {
+        const usage = `
+📝 <b>Использование команды /poll:</b>
 
-            await ctx.reply(markdownV2Escape(usage), {
-                parse_mode: 'MarkdownV2',
-            });
-            return;
-        }
+<code>/poll "Вопрос?" Вариант1 Вариант2 Вариант3</code>
 
-        let question = '';
-        let options = [];
+<b>Пример:</b>
 
-        if (textAfterCommand.startsWith('"')) {
-            const match = textAfterCommand.match(/^"([^"]+)"\s*(.*)$/);
-            if (match) {
-                question = match[1].trim();
-                const optionsPart = match[2].trim();
-                if (optionsPart) {
-                    options = optionsPart.split(/\s+/).filter((opt) => opt.length > 0);
-                }
+<code>/poll "Как вам сегодня погода?" Отлично Нормально Плохо Ужасно</code>
+
+<b>Правила:</b>
+• Вопрос должен быть в кавычках <code>" "</code>
+• Минимум 2 варианта ответа
+• Максимум 10 вариантов
+• Варианты разделяются пробелами
+        `.trim();
+
+        await ctx.reply(usage, { 
+            parse_mode: 'HTML' 
+        });
+        return;
+    }
+
+    let question = '';
+    let options = [];
+
+    // Парсинг вопроса в кавычках
+    if (textAfterCommand.startsWith('"')) {
+        const match = textAfterCommand.match(/^"([^"]+)"\s*(.*)$/);
+        if (match) {
+            question = match[1].trim();
+            const optionsPart = match[2].trim();
+            if (optionsPart) {
+                options = optionsPart.split(/\s+/).filter(opt => opt.length > 0);
             }
-        } else {
-            const parts = textAfterCommand.split(/\s+/);
-            question = parts[0];
-            options = parts.slice(1);
         }
+    } else {
+        // Если кавычек нет — берём первое слово как вопрос (fallback)
+        const parts = textAfterCommand.split(/\s+/);
+        question = parts[0];
+        options = parts.slice(1);
+    }
 
-        if (!question) {
-            await ctx.reply('❌ Не указан вопрос для опроса');
-            return;
-        }
+    if (!question) {
+        await ctx.reply('❌ <b>Ошибка:</b> Не указан вопрос для опроса', { 
+            parse_mode: 'HTML' 
+        });
+        return;
+    }
 
-        if (options.length < 2) {
-            await ctx.reply('❌ Нужно минимум 2 варианта ответа');
-            return;
-        }
+    if (options.length < 2) {
+        await ctx.reply('❌ <b>Ошибка:</b> Нужно минимум 2 варианта ответа', { 
+            parse_mode: 'HTML' 
+        });
+        return;
+    }
 
-        if (options.length > 10) {
-            await ctx.reply('❌ Максимум 10 вариантов ответа');
-            return;
-        }
+    if (options.length > 10) {
+        await ctx.reply('❌ <b>Ошибка:</b> Максимум 10 вариантов ответа', { 
+            parse_mode: 'HTML' 
+        });
+        return;
+    }
 
-        try {
-            await botService.sendPollToChannel(question, {
-                options: options,
-                isAnonymous: true,
-                multipleAnswers: false,
-            });
+    try {
+        await botService.sendPollToChannel(question, {
+            options: options,
+            isAnonymous: true,
+            multipleAnswers: false,
+        });
 
-            await ctx.reply('✅ Опрос успешно опубликован в канал!');
-            logger.info(`Poll created: "${question}" with ${options.length} options`);
-        } catch (error) {
-            logger.error('Error publishing poll:', error);
-            await ctx.reply(`❌ Не удалось опубликовать опрос: ${error.message}`);
-        }
-    });
+        await ctx.reply('✅ <b>Опрос успешно опубликован в канал!</b>', { 
+            parse_mode: 'HTML' 
+        });
+
+        logger.info(`Poll created: "${question}" with ${options.length} options`);
+    } catch (error) {
+        logger.error('Error publishing poll:', error);
+        await ctx.reply(
+            `❌ <b>Не удалось опубликовать опрос:</b> ${htmlEscape(error.message)}`, 
+            { parse_mode: 'HTML' }
+        );
+    }
+});
 
     // /list_sources command
-    bot.command('list_sources', async (ctx) => {
-        try {
-            const sources = await sourceService.getSources();
+bot.command('list_sources', async (ctx) => {
+    try {
+        const sources = await sourceService.getSources();
 
-            if (sources.length === 0) {
-                await ctx.reply('📭 Нет источников. Добавьте /add_source');
-                return;
-            }
-
-            let text = '📰 *Список источников:*\n\n';
-
-            for (const source of sources) {
-                const status = source.is_active ? '✅' : '❌';
-                const name = markdownV2Escape(source.name || 'Без названия');
-                const type = markdownV2Escape(source.type.toUpperCase());
-                const url = markdownV2Escape(source.url);
-                const id = markdownV2Escape(source.id);
-
-                text += `${status} *${name}*\n`;
-                text += `Тип: ${type}\n`;
-                text += `URL: ${url}\n`;
-                text += `ID: \`${id}\`\n\n`;
-            }
-
-            await ctx.reply(text, { parse_mode: 'MarkdownV2' });
-        } catch (error) {
-            logger.error('Error in /list_sources:', error);
-            await ctx.reply('❌ Ошибка при получении списка источников');
+        if (sources.length === 0) {
+            await ctx.reply(
+                '📭 <b>Нет добавленных источников.</b>\n\n' +
+                'Добавьте первый источник командой <code>/add_source</code>',
+                { parse_mode: 'HTML' }
+            );
+            return;
         }
-    });
+
+        let text = '📰 <b>Список источников:</b>\n\n';
+
+        for (const source of sources) {
+            const status = source.is_active ? '✅' : '❌';
+            const name = htmlEscape(source.name || 'Без названия');
+            const type = htmlEscape(source.type.toUpperCase());
+            const url = htmlEscape(source.url);
+            const id = htmlEscape(source.id);
+
+            text += `${status} <b>${name}</b>\n`;
+            text += `Тип: <code>${type}</code>\n`;
+            text += `URL: ${url}\n`;
+            text += `ID: <code>${id}</code>\n\n`;
+        }
+
+        await ctx.reply(text, { parse_mode: 'HTML' });
+    } catch (error) {
+        logger.error('Error in /list_sources:', error);
+        await ctx.reply(
+            '❌ <b>Ошибка при получении списка источников.</b>', 
+            { parse_mode: 'HTML' }
+        );
+    }
+});
 
     // /remove_source command
-    bot.command('remove_source', async (ctx) => {
-        const args = ctx.message.text.split(' ').slice(1);
+bot.command('remove_source', async (ctx) => {
+    const args = ctx.message.text.split(' ').slice(1);
 
-        if (args.length < 1) {
-            const usage =
-                `📝 *Использование:*\n` +
-                `\`/remove_source <id>\`\n\n` +
-                `ID можно узнать через /list_sources`;
+    if (args.length < 1) {
+        const usage = `
+📝 <b>Использование:</b>
 
-            await ctx.reply(markdownV2Escape(usage), {
-                parse_mode: 'MarkdownV2',
-            });
-            return;
-        }
+<code>/remove_source &lt;id источника&gt;</code>
 
-        const sourceId = args[0];
+ID источника можно узнать с помощью команды <code>/list_sources</code>
+        `.trim();
 
-        try {
-            await sourceService.deleteSource(sourceId);
-            await ctx.reply('✅ Источник удалён!');
-        } catch (error) {
-            await ctx.reply(`❌ Ошибка: ${error.message}`);
-        }
-    });
+        await ctx.reply(usage, { 
+            parse_mode: 'HTML' 
+        });
+        return;
+    }
 
-    // /clear_all_sources
-    bot.command('clear_all_sources', async (ctx) => {
-        await ctx.reply('🗑️ Выполняю полную очистку всех источников и постов...');
+    const sourceId = args[0];
 
-        try {
-            const result = await sourceService.clearAllSources();
+    try {
+        await sourceService.deleteSource(sourceId);
+        await ctx.reply(
+            '✅ <b>Источник успешно удалён!</b>', 
+            { parse_mode: 'HTML' }
+        );
+    } catch (error) {
+        await ctx.reply(
+            `❌ <b>Ошибка:</b> ${htmlEscape(error.message)}`, 
+            { parse_mode: 'HTML' }
+        );
+    }
+});
 
-            const text = `✅ *Очистка завершена!*
+    // /clear_all_sources command
+bot.command('clear_all_sources', async (ctx) => {
+    await ctx.reply(
+        '🗑️ <b>Выполняю полную очистку...</b>\n\n' +
+        'Удаляются все источники и опубликованные посты.',
+        { parse_mode: 'HTML' }
+    );
 
-Удалено источников: *${result.message.split(': ')[1] || '0'}*
+    try {
+        const result = await sourceService.clearAllSources();
 
-Теперь можно добавлять новые источники с помощью /add_source`;
+        // Извлекаем количество удалённых источников
+        const removedCount = result.message.split(': ')[1] || '0';
 
-            await ctx.reply(markdownV2Escape(text), { parse_mode: 'MarkdownV2' });
+        const text = `
+✅ <b>Очистка успешно завершена!</b>
 
-            logger.info(
-                `All sources cleared. Removed ${result.message.split(': ')[1] || '0'} sources.`
-            );
-        } catch (error) {
-            logger.error('Clear all sources failed:', error);
-            await ctx.reply(`❌ Ошибка при очистке: ${error.message}`);
-        }
-    });
+Удалено источников: <b>${removedCount}</b>
+
+Теперь вы можете добавлять новые источники с помощью команды <code>/add_source</code>
+        `.trim();
+
+        await ctx.reply(text, { 
+            parse_mode: 'HTML' 
+        });
+
+        logger.info(`All sources cleared. Removed ${removedCount} sources.`);
+    } catch (error) {
+        logger.error('Clear all sources failed:', error);
+        await ctx.reply(
+            `❌ <b>Ошибка при очистке:</b> ${htmlEscape(error.message)}`, 
+            { parse_mode: 'HTML' }
+        );
+    }
+});
 
     // /toggle_source command
-    bot.command('toggle_source', async (ctx) => {
-        const args = ctx.message.text.split(' ').slice(1);
+bot.command('toggle_source', async (ctx) => {
+    const args = ctx.message.text.split(' ').slice(1);
 
-        if (args.length < 1) {
-            const usage = `📝 *Использование:*\n` + `\`/toggle_source <id>\``;
+    if (args.length < 1) {
+        const usage = `
+📝 <b>Использование:</b>
 
-            await ctx.reply(markdownV2Escape(usage), {
-                parse_mode: 'MarkdownV2',
-            });
-            return;
-        }
+<code>/toggle_source &lt;id источника&gt;</code>
 
-        const sourceId = args[0];
+ID можно узнать через команду <code>/list_sources</code>
+        `.trim();
 
-        try {
-            await sourceService.toggleSource(sourceId);
-            await ctx.reply('✅ Статус источника изменён!');
-        } catch (error) {
-            await ctx.reply(`❌ Ошибка: ${error.message}`);
-        }
-    });
+        await ctx.reply(usage, { 
+            parse_mode: 'HTML' 
+        });
+        return;
+    }
+
+    const sourceId = args[0];
+
+    try {
+        await sourceService.toggleSource(sourceId);
+        await ctx.reply(
+            '✅ <b>Статус источника успешно изменён!</b>', 
+            { parse_mode: 'HTML' }
+        );
+    } catch (error) {
+        await ctx.reply(
+            `❌ <b>Ошибка:</b> ${htmlEscape(error.message)}`, 
+            { parse_mode: 'HTML' }
+        );
+    }
+});
 
     // /chatid command
-    bot.command('chatid', async (ctx) => {
-        const chatId = ctx.chat.id;
-        const chatType = ctx.chat.type;
-        const title = ctx.chat.title || 'Личный чат';
+bot.command('chatid', async (ctx) => {
+    const chatId = ctx.chat.id;
+    const chatType = ctx.chat.type;
+    const title = ctx.chat.title || 'Личный чат';
 
-        const text =
-            `📍 *Информация о чате*\n\n` +
-            `Chat ID: \`${chatId}\`\n` +
-            `Тип: ${chatType}\n` +
-            `Название: ${title}`;
+    const text = `
+📍 <b>Информация о чате</b>
 
-        await ctx.reply(markdownV2Escape(text), { parse_mode: 'MarkdownV2' });
+Chat ID: <code>${chatId}</code>
+Тип: <code>${chatType}</code>
+Название: ${htmlEscape(title)}
+    `.trim();
 
-        logger.info(`Chat ID requested: ${chatId} (${chatType})`);
+    await ctx.reply(text, { 
+        parse_mode: 'HTML' 
     });
+
+    logger.info(`Chat ID requested: ${chatId} (${chatType})`);
+});
 
     // /parse command
-    bot.command('parse', async (ctx) => {
-        await ctx.reply('🔄 Запускаю парсинг...');
+bot.command('parse', async (ctx) => {
+    await ctx.reply(
+        '🔄 <b>Запускаю парсинг источников...</b>', 
+        { parse_mode: 'HTML' }
+    );
 
-        try {
-            const scheduler = require('../scheduler/index');
-            await scheduler.triggerParse();
-            await ctx.reply('✅ Парсинг завершён!');
-        } catch (error) {
-            logger.error('Error in manual parse:', error);
-            await ctx.reply(`❌ Ошибка: ${error.message}`);
-        }
-    });
+    try {
+        const scheduler = require('../scheduler/index');
+        await scheduler.triggerParse();
+
+        await ctx.reply(
+            '✅ <b>Парсинг успешно завершён!</b>', 
+            { parse_mode: 'HTML' }
+        );
+    } catch (error) {
+        logger.error('Error in manual parse:', error);
+        await ctx.reply(
+            `❌ <b>Ошибка при парсинге:</b> ${htmlEscape(error.message)}`, 
+            { parse_mode: 'HTML' }
+        );
+    }
+});
 
     // /status command
-    bot.command('status', async (ctx) => {
-        try {
-            const [postCount, sources] = await Promise.all([
-                postService.getPostCount(),
-                sourceService.getSources(),
-            ]);
+bot.command('status', async (ctx) => {
+    try {
+        const [postCount, sources] = await Promise.all([
+            postService.getPostCount(),
+            sourceService.getSources(),
+        ]);
 
-            const activeSources = sources.filter(
-                (s) => s.is_active === 1 || s.is_active === true
-            ).length;
+        const activeSources = sources.filter(
+            (s) => s.is_active === 1 || s.is_active === true
+        ).length;
 
-            const statusText = `📊 *Статистика бота*
+        const now = new Date().toLocaleString('ru-RU');
 
-📰 Всего источников: *${sources.length}*
-✅ Активных: *${activeSources}*
-📝 Опубликовано постов: *${postCount}*
+        const statusText = `
+📊 <b>Статистика бота</b>
 
-⏰ Сейчас: ${new Date().toLocaleString('ru-RU')}`;
+📰 Всего источников: <b>${sources.length}</b>
+✅ Активных: <b>${activeSources}</b>
+📝 Опубликовано постов: <b>${postCount}</b>
 
-            await ctx.reply(markdownV2Escape(statusText), { parse_mode: 'MarkdownV2' });
-        } catch (error) {
-            logger.error('Error in /status command:', error);
-            await ctx.reply('❌ Не удалось загрузить статистику.');
-        }
-    });
+⏰ Сейчас: <code>${now}</code>
+        `.trim();
+
+        await ctx.reply(statusText, { 
+            parse_mode: 'HTML' 
+        });
+    } catch (error) {
+        logger.error('Error in /status command:', error);
+        await ctx.reply(
+            `❌ <b>Не удалось загрузить статистику:</b> ${htmlEscape(error.message)}`, 
+            { parse_mode: 'HTML' }
+        );
+    }
+});
 
     // Handle callback queries
     bot.on('callback_query', async (ctx) => {
