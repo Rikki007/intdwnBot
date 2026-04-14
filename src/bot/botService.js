@@ -1,7 +1,6 @@
 const { Telegraf } = require('telegraf');
 const config = require('../config');
 const logger = require('../utils/logger');
-const htmlEscape = require('../utils/htmlEscape');
 
 /**
  * Telegram Bot Service
@@ -60,7 +59,7 @@ class BotService {
 📖 <b>Справка по командам Autopost Bot</b>
 
 <b>Управление источниками:</b>
-<code>/add_source &lt;type&gt; &lt;url&gt; [name] [selector]</code>
+<code>/add_source &lt;type&gt; &lt;url&gt; [name]</code>
 <code>/list_sources</code> — список источников
 <code>/toggle_source &lt;id&gt;</code> — включить/выключить
 <code>/remove_source &lt;id&gt;</code> — удалить источник
@@ -107,7 +106,10 @@ class BotService {
 
             logger.info(`✅ Сообщение успешно отправлено в канал: ${message.message_id}`);
             // Логируем первые 500 символов для отладки (не весь текст)
-            logger.debug('Отправленный текст (начало):', text.substring(0, 500) + (text.length > 500 ? '...' : ''));
+            logger.debug(
+                'Отправленный текст (начало):',
+                text.substring(0, 500) + (text.length > 500 ? '...' : '')
+            );
 
             return message;
         } catch (error) {
@@ -115,7 +117,7 @@ class BotService {
             logger.error(`   Текст ошибки: ${error.message}`);
             logger.error(`   Код ошибки: ${error.code || error.response?.error_code}`);
             logger.error(`   Описание: ${error.description || error.response?.description}`);
-            
+
             // Логируем проблемный текст (без повторного экранирования)
             logger.error(`   Проблемный текст (начало): ${text.substring(0, 400)}...`);
 
@@ -131,27 +133,38 @@ class BotService {
      * Send photo to channel with caption (HTML)
      */
     async sendPhotoToChannel(photoUrl, caption = '', options = {}) {
-        try {
-            if (!photoUrl) {
-                throw new Error('Photo URL is required');
-            }
+        if (!photoUrl) {
+            throw new Error('Photo URL is required');
+        }
 
+        // Защита от слишком маленьких/невалидных изображений BBC
+        if (
+            photoUrl.includes('/240/') ||
+            photoUrl.includes('width=240') ||
+            photoUrl.includes('height=240')
+        ) {
+            logger.warn(`[Photo] Пропускаем слишком маленькое изображение: ${photoUrl}`);
+            // Падаем обратно на обычный текст
+            return this.sendToChannel(caption);
+        }
+
+        try {
             const message = await this.bot.telegram.sendPhoto(this.channelId, photoUrl, {
-                caption: caption || undefined,           // если caption пустой — не отправляем
+                caption: caption || undefined,
                 parse_mode: options.parseMode || 'HTML',
-                reply_markup: options.replyMarkup,
                 disable_notification: options.disableNotification ?? false,
             });
 
-            logger.info(`📸 Фото успешно отправлено в канал: ${message.message_id}`);
+            logger.info(`📸 Фото успешно отправлено: ${message.message_id}`);
             return message;
         } catch (error) {
             logger.error('❌ Ошибка при отправке фото в канал:', error.message);
-            
-            // Более детальное логирование для фото
             logger.error(`   Photo URL: ${photoUrl}`);
+
+            // Если ошибка связана с фото — отправляем только текст
             if (caption) {
-                logger.error(`   Caption (начало): ${caption.substring(0, 300)}...`);
+                logger.info('[Photo] Пробуем отправить только текст из-за ошибки фото');
+                return this.sendToChannel(caption);
             }
 
             throw error;

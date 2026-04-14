@@ -1,3 +1,4 @@
+// src/db/index.js
 const betterSqlite3 = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
@@ -13,19 +14,18 @@ function initDatabase() {
     const dbPath = config.db.path;
     const dbDir = path.dirname(dbPath);
 
-    // Create data folder if it doesn't exist
+    // Создаём папку data, если её нет
     if (!fs.existsSync(dbDir)) {
         fs.mkdirSync(dbDir, { recursive: true });
     }
 
-    // Open database with better-sqlite3
     db = new betterSqlite3(dbPath, { verbose: null });
 
-    // Enable WAL mode for better concurrency
+    // WAL режим для лучшей производительности
     db.pragma('journal_mode = WAL');
     db.pragma('synchronous = NORMAL');
 
-    // Create tables
+    // Таблица источников
     db.exec(`
         CREATE TABLE IF NOT EXISTS sources (
             id TEXT PRIMARY KEY,
@@ -39,6 +39,7 @@ function initDatabase() {
         )
     `);
 
+    // Таблица постов с поддержкой статусов (новая чистая версия)
     db.exec(`
         CREATE TABLE IF NOT EXISTS posts (
             id TEXT PRIMARY KEY,
@@ -48,26 +49,24 @@ function initDatabase() {
             url TEXT UNIQUE,
             hash TEXT,
             image_url TEXT,
+            status TEXT DEFAULT 'parsed',
+            ai_attempts INTEGER DEFAULT 0,
+            publish_attempts INTEGER DEFAULT 0,
+            error_message TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
             published_at TEXT,
             FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE
         )
     `);
 
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_posts_url ON posts(url)`);
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_posts_hash ON posts(hash)`);
+    // Индексы
+    db.exec('CREATE INDEX IF NOT EXISTS idx_posts_url ON posts(url)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_posts_hash ON posts(hash)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_posts_source_status ON posts(source_id, status)');
 
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            level TEXT NOT NULL,
-            message TEXT,
-            context TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-
-    logger.info('✅ Database initialized successfully with better-sqlite3');
+    logger.info('✅ Database initialized successfully with post statuses support');
     return db;
 }
 

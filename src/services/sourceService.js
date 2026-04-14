@@ -99,7 +99,9 @@ ID: \`${source.id}\``;
             };
         } catch (error) {
             logger.error('Error clearing all sources:', error);
-            throw new Error('Не удалось очистить: ' + error.message);
+            throw new Error('Не удалось очистить: ' + error.message, {
+                cause: error,
+            });
         }
     },
 };

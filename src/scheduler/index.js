@@ -1,62 +1,64 @@
+// src/scheduler/index.js
 const cron = require('node-cron');
 const config = require('../config');
 const logger = require('../utils/logger');
 const sourceService = require('../services/sourceService');
 const parserService = require('../services/parserService');
 const postService = require('../services/postService');
-const queueService = require('../services/queueService');
-const botService = require('../bot/botService');
 
 /**
- * Scheduler Service - manages cron jobs
+ * Scheduler Service — только парсинг и создание постов
  */
 class SchedulerService {
     constructor() {
         this.jobs = new Map();
     }
 
-    /**
-     * Initialize and start all scheduled jobs
-     */
     init() {
         this.setupParseJob();
-        this.setupPublishJob();
-        logger.info('Scheduler initialized');
+        logger.info('Scheduler initialized (parse only)');
     }
 
     /**
-     * Setup periodic parsing job
+     * Основной джоб парсинга (каждые 15 минут)
      */
     setupParseJob() {
-        const cronExpr = config.scheduler.cron;
+        const cronExpr = config.scheduler.cron || '*/15 * * * *';
 
         const job = cron.schedule(
             cronExpr,
             async () => {
-                logger.info('Starting scheduled parsing...');
+                logger.info('🔄 Запущен плановый парсинг источников...');
 
                 try {
                     const sources = await sourceService.getActiveSources();
-                    logger.info(`Found ${sources.length} active sources`);
+                    logger.info(`Найдено ${sources.length} активных источников`);
+
+                    let totalNewPosts = 0;
 
                     for (const source of sources) {
                         try {
                             const items = await parserService.parseSource(source);
-                            logger.info(`Parsed ${items.length} items from ${source.url}`);
+                            logger.info(
+                                `Парсер ${source.type} → ${source.url} | найдено ${items.length} статей`
+                            );
 
-                            // Add new posts to queue
                             for (const item of items) {
-                                await queueService.add('publish_post', {
-                                    sourceId: source.id,
-                                    data: item,
-                                });
+                                const post = await postService.createPost(source.id, item);
+                                if (post) {
+                                    totalNewPosts++;
+                                }
                             }
                         } catch (error) {
-                            logger.error(`Error parsing source ${source.url}:`, error.message);
+                            logger.error(`Ошибка парсинга источника ${source.url}:`, error.message);
                         }
                     }
+
+                    logger.info(
+                        `Плановый парсинг завершён. Создано новых постов: ${totalNewPosts}`
+                    );
                 } catch (error) {
-                    logger.error('Error in parse job:', error);
+                    logger.error('Ошибка в джобе парсинга:', error);
                 }
             },
             {
@@ -65,70 +67,59 @@ class SchedulerService {
         );
 
         this.jobs.set('parse', job);
-        logger.info(`Parse job scheduled: ${cronExpr}`);
+        logger.info(`Парсинг запланирован: ${cronExpr}`);
     }
 
     /**
-     * Setup publish job (processes queue)
+     * Ручной парсинг всех активных источников
      */
-    setupPublishJob() {
-        // Process queue every minute
-        const job = cron.schedule(
-            '* * * * *',
-            async () => {
-                const status = queueService.getStatus();
-                if (status.pending > 0) {
-                    logger.info(`Processing queue: ${status.pending} jobs`);
+    async triggerParse() {
+        logger.info('🔄 Запущен ручной парсинг всех источников');
+
+        const sources = await sourceService.getActiveSources();
+        let totalNewPosts = 0;
+
+        for (const source of sources) {
+            try {
+                const items = await parserService.parseSource(source);
+
+                for (const item of items) {
+                    const post = await postService.createPost(source.id, item);
+                    if (post) totalNewPosts++;
                 }
-            },
-            {
-                scheduled: true,
+            } catch (error) {
+                logger.error(`Ошибка парсинга источника ${source.url}:`, error.message);
             }
-        );
+        }
 
-        this.jobs.set('publish', job);
-        logger.info('Publish job scheduled: every minute');
+        return { newPosts: totalNewPosts };
     }
 
     /**
-     * Stop all jobs
+     * Ручной парсинг одного конкретного источника
      */
+    async triggerParseSingle(sourceId) {
+        const source = await sourceService.getSource(sourceId);
+        if (!source) throw new Error(`Источник ${sourceId} не найден`);
+
+        const items = await parserService.parseSource(source);
+        let newPosts = 0;
+
+        for (const item of items) {
+            const post = await postService.createPost(source.id, item);
+            if (post) newPosts++;
+        }
+
+        return { newPosts, sourceId };
+    }
+
     stopAll() {
         for (const [name, job] of this.jobs) {
             job.stop();
             logger.info(`Job stopped: ${name}`);
         }
     }
-
-    /**
-     * Manually trigger parsing
-     */
-    async triggerParse() {
-        logger.info('Manual parse triggered');
-
-        const sources = await sourceService.getActiveSources();
-
-        for (const source of sources) {
-            try {
-                const items = await parserService.parseSource(source);
-                logger.info(`Parsed ${items.length} items from ${source.url}`);
-
-                for (const item of items) {
-                    const post = await postService.createPost(source.id, item);
-
-                    if (post) {
-                        // Send to channel
-                        const text = postService.formatForTelegram(post);
-                        await botService.sendToChannel(text);
-                    }
-                }
-            } catch (error) {
-                logger.error(`Error parsing source ${source.url}:`, error.message);
-            }
-        }
-    }
 }
 
 const schedulerService = new SchedulerService();
-
 module.exports = schedulerService;

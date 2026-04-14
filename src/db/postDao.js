@@ -1,13 +1,14 @@
+// src/db/postDao.js
 const { getDb } = require('./index');
 const { generateId, generateHash } = require('../utils/helpers');
 const logger = require('../utils/logger');
 
 /**
- * Post Data Access Object
+ * Post Data Access Object с поддержкой статусов
  */
 const postDao = {
     /**
-     * Create new post
+     * Создать новый пост со статусом 'parsed'
      */
     async create(data) {
         const db = getDb();
@@ -15,8 +16,11 @@ const postDao = {
         const hash = generateHash(data.content || data.title || data.url);
 
         const stmt = db.prepare(`
-            INSERT INTO posts (id, source_id, title, content, url, hash, image_url, published_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            INSERT INTO posts (
+                id, source_id, title, content, url, hash, image_url,
+                status, ai_attempts, publish_attempts
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'parsed', 0, 0)
         `);
 
         try {
@@ -30,125 +34,107 @@ const postDao = {
                 data.image_url || null
             );
 
-            logger.info(`Post created: ${data.title}`);
-            return { id, ...data, hash };
+            logger.info(`Post created [parsed]: ${data.title?.slice(0, 60) || 'no title'}`);
+            return { id, ...data, hash, status: 'parsed' };
         } catch (err) {
             if (err.message.includes('UNIQUE constraint failed')) {
                 logger.info(`Duplicate post skipped: ${data.url}`);
-                return null; // Duplicate
-            } else {
-                logger.error('Error creating post:', err);
-                throw err;
+                return null;
             }
+            logger.error('Error creating post:', err);
+            throw err;
         }
     },
 
     /**
-     * Get all posts
+     * Обновить статус поста
      */
+    async updateStatus(id, status, errorMessage = null) {
+        const db = getDb();
+        const stmt = db.prepare(`
+            UPDATE posts 
+            SET status = ?, 
+                error_message = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        `);
+        try {
+            stmt.run(status, errorMessage, id);
+            logger.debug(`Post ${id} → status: ${status}`);
+            return true;
+        } catch (err) {
+            logger.error(`Failed to update status for post ${id}:`, err);
+            throw err;
+        }
+    },
+
+    /**
+     * Увеличить количество попыток AI
+     */
+    async incrementAiAttempts(id) {
+        const db = getDb();
+        const stmt = db.prepare(`
+            UPDATE posts 
+            SET ai_attempts = ai_attempts + 1, 
+                updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        `);
+        stmt.run(id);
+    },
+
+    /**
+     * Увеличить количество попыток публикации
+     */
+    async incrementPublishAttempts(id) {
+        const db = getDb();
+        const stmt = db.prepare(`
+            UPDATE posts 
+            SET publish_attempts = publish_attempts + 1, 
+                updated_at = CURRENT_TIMESTAMP 
+            WHERE id = ?
+        `);
+        stmt.run(id);
+    },
+
+    /**
+     * Получить посты по статусу
+     */
+    async getByStatus(status, limit = 50) {
+        const db = getDb();
+        const stmt = db.prepare(`
+            SELECT * FROM posts 
+            WHERE status = ? 
+            ORDER BY created_at DESC 
+            LIMIT ?
+        `);
+        return stmt.all(status, limit);
+    },
+
+    // Методы для совместимости
     async getAll(limit = 50) {
         const db = getDb();
         const stmt = db.prepare('SELECT * FROM posts ORDER BY created_at DESC LIMIT ?');
-        try {
-            return stmt.all(limit);
-        } catch (err) {
-            logger.error('Error getting posts:', err);
-            throw err;
-        }
+        return stmt.all(limit);
     },
 
-    /**
-     * Get posts by source
-     */
-    async getBySource(sourceId, limit = 20) {
-        const db = getDb();
-        const stmt = db.prepare(
-            'SELECT * FROM posts WHERE source_id = ? ORDER BY created_at DESC LIMIT ?'
-        );
-        try {
-            return stmt.all(sourceId, limit);
-        } catch (err) {
-            logger.error('Error getting posts by source:', err);
-            throw err;
-        }
-    },
-
-    /**
-     * Check if URL exists
-     */
-    async existsByUrl(url) {
-        const db = getDb();
-        const stmt = db.prepare('SELECT id FROM posts WHERE url = ?');
-        try {
-            const row = stmt.get(url);
-            return !!row;
-        } catch (err) {
-            logger.error('Error checking URL:', err);
-            throw err;
-        }
-    },
-
-    /**
-     * Check if hash exists
-     */
-    async existsByHash(hash) {
-        const db = getDb();
-        const stmt = db.prepare('SELECT id FROM posts WHERE hash = ?');
-        try {
-            const row = stmt.get(hash);
-            return !!row;
-        } catch (err) {
-            logger.error('Error checking hash:', err);
-            throw err;
-        }
-    },
-
-    /**
-     * Check for duplicates
-     */
-    async isDuplicate(url, content) {
-        if (url) {
-            const urlExists = await this.existsByUrl(url);
-            if (urlExists) return true;
-        }
-
-        if (content) {
-            const hash = generateHash(content);
-            const hashExists = await this.existsByHash(hash);
-            if (hashExists) return true;
-        }
-
-        return false;
-    },
-
-    /**
-     * Delete post
-     */
-    async delete(id) {
-        const db = getDb();
-        const stmt = db.prepare('DELETE FROM posts WHERE id = ?');
-        try {
-            stmt.run(id);
-            return { success: true };
-        } catch (err) {
-            logger.error('Error deleting post:', err);
-            throw err;
-        }
-    },
-
-    /**
-     * Get recent posts count
-     */
     async getCount() {
         const db = getDb();
         const stmt = db.prepare('SELECT COUNT(*) as count FROM posts');
-        try {
-            const row = stmt.get();
-            return row.count;
-        } catch (err) {
-            logger.error('Error getting posts count:', err);
-            throw err;
-        }
+        const row = stmt.get();
+        return row.count;
+    },
+
+    async getById(id) {
+        const db = getDb();
+        const stmt = db.prepare('SELECT * FROM posts WHERE id = ?');
+        return stmt.get(id);
+    },
+
+    async getCountByStatus(status) {
+        const db = getDb();
+        const stmt = db.prepare('SELECT COUNT(*) as count FROM posts WHERE status = ?');
+        const row = stmt.get(status);
+        return row ? row.count : 0;
     },
 };
 

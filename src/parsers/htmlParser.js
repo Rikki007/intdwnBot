@@ -10,49 +10,58 @@ const htmlParser = {
     /**
      * Parse HTML page and extract content
      */
-    async parse(url, selector = 'article') {
+    async fetchFullArticle(url) {
         try {
-            logger.info(`Parsing HTML: ${url}`);
+            logger.info(`Fetching full article: ${url}`);
 
             const response = await axios.get(url, {
-                timeout: config.parser.timeout,
+                timeout: config.parser.timeout || 30000,
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (compatible; TelegramBot/1.0)',
+                    'User-Agent': 'Mozilla/5.0 (compatible; TelegramAutopostBot/1.0)',
                 },
             });
 
             const $ = cheerio.load(response.data);
-            const $content = $(selector);
 
-            const title = $('h1').first().text().trim() || $('title').text().trim() || '';
+            // Универсальные селекторы для научных и психологических сайтов
+            const contentSelectors = [
+                'article', // общий
+                '.post-content', // PsyPost
+                '.entry-content', // многие WordPress
+                '.article-body', // Neuroscience News
+                '.content', // общий
+                '.td-post-content', // другие
+                'main article', // ещё вариант
+            ];
 
-            const content = $content.text().trim().slice(0, 2000);
+            let fullText = '';
 
-            // Try to find main image
-            const imageUrl =
-                $('meta[property="og:image"]').attr('content') ||
-                $('article img').first().attr('src') ||
-                $('img').first().attr('src') ||
-                null;
+            for (const selector of contentSelectors) {
+                const element = $(selector);
+                if (element.length > 0) {
+                    // Удаляем ненужные элементы (реклама, скрипты, кнопки и т.д.)
+                    element
+                        .find('script, style, iframe, .ad, .share, .related, .comments')
+                        .remove();
+                    fullText = element.text().trim();
+                    if (fullText.length > 300) break;
+                }
+            }
 
-            // Try to find description
-            const description =
-                $('meta[name="description"]').attr('content') ||
-                $('meta[property="og:description"]').attr('content') ||
-                $('p').first().text().trim().slice(0, 500) ||
-                '';
+            // Если ничего не нашли — берём весь основной контент страницы
+            if (fullText.length < 300) {
+                fullText = $('body').text().trim();
+            }
 
-            logger.info(`HTML parsed: ${url}`);
-            return {
-                title,
-                content,
-                description,
-                imageUrl,
-                link: url,
-            };
+            // Очищаем текст от лишних пробелов и переносов
+            fullText = fullText.replace(/\s+/g, ' ').trim().slice(0, 15000); // ограничиваем максимальную длину
+
+            logger.info(`Full article fetched: ${url} (${fullText.length} chars)`);
+
+            return fullText;
         } catch (error) {
-            logger.error(`Error parsing HTML ${url}:`, error.message);
-            throw error;
+            logger.error(`Failed to fetch full article ${url}:`, error.message);
+            return null;
         }
     },
 

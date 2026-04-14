@@ -26,7 +26,7 @@ class AiService {
         }
 
         const maxRetries = 3;
-        const baseDelay = 20000;
+        const baseDelay = 45000;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
