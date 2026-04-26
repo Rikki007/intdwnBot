@@ -4,14 +4,14 @@ const logger = require('../utils/logger');
 const config = require('../config');
 
 /**
- * Universal AI service via OpenRouter
+ * Universal AI service via deepSeek
  */
 class AiService {
     constructor() {
         this.enabled = config.ai?.enabled === true;
-        this.provider = config.ai?.provider || 'openrouter';
+        this.provider = config.ai?.provider || 'deepseek';
         this.apiKey = config.ai?.apiKey;
-        this.model = config.ai?.model || 'z-ai/glm-4.5-air:free';
+        this.model = config.ai?.model || 'deepseek-chat';
 
         if (this.enabled && !this.apiKey) {
             logger.warn('AI_API_KEY не указан в .env — AI отключён');
@@ -33,7 +33,7 @@ class AiService {
                 logger.info(`[AI] Запрос к ${this.model} (попытка ${attempt}/${maxRetries})`);
 
                 const response = await axios.post(
-                    'https://openrouter.ai/api/v1/chat/completions',
+                    'https://api.deepseek.com/chat/completions',
                     {
                         model: this.model,
                         messages: [{ role: 'user', content: message }],
@@ -64,7 +64,7 @@ class AiService {
                 const errorMsg = error.response?.data?.error?.message || error.message;
 
                 logger.error(
-                    `OpenRouter ошибка (попытка ${attempt}): Status=${status} | ${errorMsg}`
+                    `deepSeek ошибка (попытка ${attempt}): Status=${status} | ${errorMsg}`
                 );
 
                 // === PROCESSING 429 (Rate Limit) ===

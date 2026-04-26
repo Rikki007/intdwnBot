@@ -31,8 +31,8 @@ module.exports = {
     // AI settings
     ai: {
         enabled: process.env.AI_ENABLED === 'true',
-        provider: process.env.AI_PROVIDER || 'openrouter',
+        provider: process.env.AI_PROVIDER || 'deepseek',
         apiKey: process.env.AI_API_KEY,
-        model: process.env.AI_MODEL || 'z-ai/glm-4.5-air:free',
+        model: process.env.AI_MODEL || 'deepseek-chat',
     },
 };
